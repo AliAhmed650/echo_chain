@@ -1,113 +1,96 @@
 import 'package:flutter/foundation.dart';
 import '../models/cell_type.dart';
 import '../models/recorded_move.dart';
-import '../models/echo.dart';
 import '../models/level_data.dart';
 
 class GameController extends ChangeNotifier {
   final LevelData level;
+  final int echoDelay; // بعد كام خطوة الصدى بيبدأ يتحرك
 
-  Position playerPosition;
   int currentStep = 0;
-  final Set<Position> pressedButtons = {};
   bool isWon = false;
+  bool isDead = false;
 
-  final List<RecordedMove> _currentRunMoves = [];
-  final List<Echo> echoes = [];
+  // كل حركة اللاعب الحقيقية من أول اللعبة، بالترتيب
+  final List<RecordedMove> fullHistory = [];
 
-  static const int echoDelay = 6;
+  GameController({required this.level, this.echoDelay = 5}) {
+    fullHistory.add(
+      RecordedMove(stepIndex: 0, position: level.startPosition),
+    );
+  }
 
-  GameController({required this.level})
-      : playerPosition = level.startPosition;
+  Position get playerPosition => fullHistory.last.position;
 
-  int get gridSize => level.gridSize;
-  Map<Position, CellType> get cells => level.cells;
+  // مكان الصدى دلوقتي = مكان اللاعب من "echoDelay" خطوة فاتت
+  Position? get echoPosition {
+    final echoStep = currentStep - echoDelay;
+    if (echoStep < 0) return null;
+    if (echoStep >= fullHistory.length) return fullHistory.last.position;
+    return fullHistory[echoStep].position;
+  }
 
-  bool get isDoorOpen => pressedButtons.length >= level.requiredButtons;
+  // الأزرار المشغولة دلوقتي فعليًا (لازم حضور مستمر، مش لمسة بتفضل للأبد)
+  Set<Position> get occupiedButtons {
+    final occupied = <Position>{};
+    if (level.cells[playerPosition] == CellType.button) {
+      occupied.add(playerPosition);
+    }
+    final echoPos = echoPosition;
+    if (echoPos != null && level.cells[echoPos] == CellType.button) {
+      occupied.add(echoPos);
+    }
+    return occupied;
+  }
 
-  bool _isWalkable(Position pos) {
-    if (pos.x < 0 || pos.x >= gridSize || pos.y < 0 || pos.y >= gridSize) {
+  bool get isDoorOpen => occupiedButtons.length >= level.requiredButtons;
+
+  bool _isWalkable(Position pos, bool doorOpenState) {
+    if (pos.x < 0 || pos.x >= level.gridSize || pos.y < 0 || pos.y >= level.gridSize) {
       return false;
     }
-    final type = cells[pos] ?? CellType.empty;
+    final type = level.cells[pos] ?? CellType.empty;
     if (type == CellType.wall) return false;
-    if (type == CellType.door && !isDoorOpen) return false;
+    if (type == CellType.door && !doorOpenState) return false;
     return true;
+  }
+
+  void _advanceStep(Position newPlayerPos) {
+    currentStep++;
+    fullHistory.add(RecordedMove(stepIndex: currentStep, position: newPlayerPos));
+
+    // فحص التصادم: لو الصدى في نفس مكان اللاعب دلوقتي، اعتبرها فشل بسيط (اختياري تصميميًا)
+    final echoPos = echoPosition;
+    if (echoPos != null && echoPos == newPlayerPos) {
+      // مش هنموت اللاعب حاليًا، بس ممكن تستخدمها بعدين كخطر
+    }
+
+    if (level.cells[newPlayerPos] == CellType.goal) {
+      isWon = true;
+    }
+
+    notifyListeners();
   }
 
   void movePlayer(int dx, int dy) {
     if (isWon) return;
-
     final newPos = playerPosition.move(dx, dy);
-    if (!_isWalkable(newPos)) return;
-
-    playerPosition = newPos;
-    currentStep++;
-
-    _currentRunMoves.add(
-      RecordedMove(stepIndex: currentStep, position: playerPosition),
-    );
-
-    _updateEchoes();
-    _checkButton(playerPosition);
-    _checkGoal();
-
-    notifyListeners();
+    if (!_isWalkable(newPos, isDoorOpen)) return;
+    _advanceStep(newPos);
   }
 
-  void _updateEchoes() {
-    for (final echo in echoes) {
-      final echoPos = echo.getPositionAtStep(currentStep);
-      if (echoPos != null) {
-        _checkButton(echoPos);
-      }
-    }
-  }
-
-  void _checkButton(Position pos) {
-    if (cells[pos] == CellType.button) {
-      pressedButtons.add(pos);
-    }
-  }
-
-  void _checkGoal() {
-    if (cells[playerPosition] == CellType.goal) {
-      isWon = true;
-    }
-  }
-
-  void dropEcho() {
-    if (_currentRunMoves.isEmpty) return;
-
-    echoes.add(Echo(
-      recordedMoves: List.from(_currentRunMoves),
-      delaySteps: currentStep - _currentRunMoves.length + echoDelay,
-    ));
-
-    _currentRunMoves.clear();
-    playerPosition = level.startPosition;
-
-    notifyListeners();
+  // وقف مكانك (خطوة "انتظار") - أهم أداة في اللعبة عشان تخلي الصدى "يمسك" الزرار لمدة أطول
+  void waitInPlace() {
+    if (isWon) return;
+    _advanceStep(playerPosition);
   }
 
   void resetLevel() {
-    playerPosition = level.startPosition;
     currentStep = 0;
-    pressedButtons.clear();
     isWon = false;
-    _currentRunMoves.clear();
-    echoes.clear();
+    isDead = false;
+    fullHistory.clear();
+    fullHistory.add(RecordedMove(stepIndex: 0, position: level.startPosition));
     notifyListeners();
-  }
-
-  List<Position> getActiveEchoPositions() {
-    final result = <Position>[];
-    for (final echo in echoes) {
-      final pos = echo.getPositionAtStep(currentStep);
-      if (pos != null) {
-        result.add(pos);
-      }
-    }
-    return result;
   }
 }
