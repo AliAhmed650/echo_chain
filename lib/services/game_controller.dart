@@ -2,15 +2,14 @@ import 'package:flutter/foundation.dart';
 import '../models/cell_type.dart';
 import '../models/recorded_move.dart';
 import '../models/echo.dart';
+import '../models/level_data.dart';
 
 class GameController extends ChangeNotifier {
-  final int gridSize;
-  final Map<Position, CellType> cells;
-  final Position startPosition;
+  final LevelData level;
 
   Position playerPosition;
   int currentStep = 0;
-  bool isButtonPressed = false;
+  final Set<Position> pressedButtons = {};
   bool isWon = false;
 
   final List<RecordedMove> _currentRunMoves = [];
@@ -18,11 +17,13 @@ class GameController extends ChangeNotifier {
 
   static const int echoDelay = 6;
 
-  GameController({
-    required this.gridSize,
-    required this.cells,
-    required this.startPosition,
-  }) : playerPosition = startPosition;
+  GameController({required this.level})
+      : playerPosition = level.startPosition;
+
+  int get gridSize => level.gridSize;
+  Map<Position, CellType> get cells => level.cells;
+
+  bool get isDoorOpen => pressedButtons.length >= level.requiredButtons;
 
   bool _isWalkable(Position pos) {
     if (pos.x < 0 || pos.x >= gridSize || pos.y < 0 || pos.y >= gridSize) {
@@ -30,7 +31,7 @@ class GameController extends ChangeNotifier {
     }
     final type = cells[pos] ?? CellType.empty;
     if (type == CellType.wall) return false;
-    if (type == CellType.door && !isButtonPressed) return false;
+    if (type == CellType.door && !isDoorOpen) return false;
     return true;
   }
 
@@ -48,7 +49,7 @@ class GameController extends ChangeNotifier {
     );
 
     _updateEchoes();
-    _checkButton();
+    _checkButton(playerPosition);
     _checkGoal();
 
     notifyListeners();
@@ -57,15 +58,15 @@ class GameController extends ChangeNotifier {
   void _updateEchoes() {
     for (final echo in echoes) {
       final echoPos = echo.getPositionAtStep(currentStep);
-      if (echoPos != null && cells[echoPos] == CellType.button) {
-        isButtonPressed = true;
+      if (echoPos != null) {
+        _checkButton(echoPos);
       }
     }
   }
 
-  void _checkButton() {
-    if (cells[playerPosition] == CellType.button) {
-      isButtonPressed = true;
+  void _checkButton(Position pos) {
+    if (cells[pos] == CellType.button) {
+      pressedButtons.add(pos);
     }
   }
 
@@ -84,15 +85,15 @@ class GameController extends ChangeNotifier {
     ));
 
     _currentRunMoves.clear();
-    playerPosition = startPosition;
+    playerPosition = level.startPosition;
 
     notifyListeners();
   }
 
   void resetLevel() {
-    playerPosition = startPosition;
+    playerPosition = level.startPosition;
     currentStep = 0;
-    isButtonPressed = false;
+    pressedButtons.clear();
     isWon = false;
     _currentRunMoves.clear();
     echoes.clear();

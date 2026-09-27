@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'screens/level_screen.dart';
-
+import 'screens/level_select_screen.dart';
 void main() {
   runApp(const EchoChainApp());
 }
@@ -14,7 +13,7 @@ class EchoChainApp extends StatelessWidget {
       title: 'Echo Chain',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(useMaterial3: true),
-      home: const LevelScreen(),
+      home: const LevelSelectScreen(),
     );
   }
 }

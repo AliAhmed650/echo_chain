@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import '../models/cell_type.dart';
 import '../models/recorded_move.dart';
+import '../models/level_data.dart';
 import '../services/game_controller.dart';
 
 class LevelScreen extends StatefulWidget {
-  const LevelScreen({super.key});
+  final LevelData level;
+
+  const LevelScreen({super.key, required this.level});
 
   @override
   State<LevelScreen> createState() => _LevelScreenState();
@@ -21,22 +24,7 @@ class _LevelScreenState extends State<LevelScreen> {
   @override
   void initState() {
     super.initState();
-    _buildLevel();
-  }
-
-  void _buildLevel() {
-    // نفس تصميم المستوى اللي رسمناه: شبكة 5×5
-    final cells = <Position, CellType>{
-      const Position(2, 2): CellType.button,
-      const Position(4, 2): CellType.door,
-      const Position(4, 0): CellType.goal,
-    };
-
-    controller = GameController(
-      gridSize: 5,
-      cells: cells,
-      startPosition: const Position(0, 4),
-    );
+    controller = GameController(level: widget.level);
     controller.addListener(() => setState(() {}));
   }
 
@@ -62,25 +50,27 @@ class _LevelScreenState extends State<LevelScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Text('Echo Chain',
-              style: TextStyle(
+          IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+          ),
+          Text(widget.level.name,
+              style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 20,
+                  fontSize: 18,
                   fontWeight: FontWeight.bold)),
           Row(
             children: [
               Icon(
-                controller.isButtonPressed
-                    ? Icons.lock_open
-                    : Icons.lock_outline,
-                color: controller.isButtonPressed
-                    ? accentTeal
-                    : accentAmber,
+                controller.isDoorOpen ? Icons.lock_open : Icons.lock_outline,
+                color: controller.isDoorOpen ? accentTeal : accentAmber,
                 size: 20,
               ),
               const SizedBox(width: 6),
-              Text('خطوة ${controller.currentStep}',
-                  style: const TextStyle(color: Colors.white70)),
+              Text(
+                '${controller.pressedButtons.length}/${widget.level.requiredButtons}',
+                style: const TextStyle(color: Colors.white70),
+              ),
             ],
           ),
         ],
@@ -89,7 +79,7 @@ class _LevelScreenState extends State<LevelScreen> {
   }
 
   Widget _buildGrid() {
-    const cellSize = 56.0;
+    const cellSize = 50.0;
     final activeEchoes = controller.getActiveEchoPositions();
 
     return Container(
@@ -107,13 +97,15 @@ class _LevelScreenState extends State<LevelScreen> {
               final type = controller.cells[pos] ?? CellType.empty;
               final isPlayer = controller.playerPosition == pos;
               final isEcho = activeEchoes.contains(pos);
+              final isButtonPressedHere =
+                  controller.pressedButtons.contains(pos);
 
               return Container(
                 width: cellSize,
                 height: cellSize,
                 margin: const EdgeInsets.all(2),
                 decoration: BoxDecoration(
-                  color: _cellColor(type),
+                  color: _cellColor(type, isButtonPressedHere),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                       color: Colors.white.withOpacity(0.1), width: 1),
@@ -122,22 +114,27 @@ class _LevelScreenState extends State<LevelScreen> {
                   alignment: Alignment.center,
                   children: [
                     if (type == CellType.button)
-                      const Icon(Icons.radio_button_checked,
-                          color: Colors.white70, size: 20),
+                      Icon(
+                        isButtonPressedHere
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_unchecked,
+                        color: Colors.white70,
+                        size: 18,
+                      ),
                     if (type == CellType.door)
                       Icon(
-                        controller.isButtonPressed
+                        controller.isDoorOpen
                             ? Icons.door_front_door_outlined
                             : Icons.door_back_door,
                         color: Colors.white70,
-                        size: 20,
+                        size: 18,
                       ),
                     if (type == CellType.goal)
-                      const Icon(Icons.flag, color: Colors.white, size: 22),
+                      const Icon(Icons.flag, color: Colors.white, size: 20),
                     if (isEcho)
                       Container(
-                        width: 34,
-                        height: 34,
+                        width: 30,
+                        height: 30,
                         decoration: BoxDecoration(
                           color: accentTeal.withOpacity(0.5),
                           shape: BoxShape.circle,
@@ -146,8 +143,8 @@ class _LevelScreenState extends State<LevelScreen> {
                       ),
                     if (isPlayer)
                       Container(
-                        width: 34,
-                        height: 34,
+                        width: 30,
+                        height: 30,
                         decoration: const BoxDecoration(
                           color: Colors.white,
                           shape: BoxShape.circle,
@@ -163,14 +160,16 @@ class _LevelScreenState extends State<LevelScreen> {
     );
   }
 
-  Color _cellColor(CellType type) {
+  Color _cellColor(CellType type, bool isPressed) {
     switch (type) {
       case CellType.wall:
         return Colors.grey.shade800;
       case CellType.button:
-        return accentAmber.withOpacity(0.25);
+        return isPressed
+            ? accentTeal.withOpacity(0.3)
+            : accentAmber.withOpacity(0.25);
       case CellType.door:
-        return controller.isButtonPressed
+        return controller.isDoorOpen
             ? accentTeal.withOpacity(0.2)
             : accentCoral.withOpacity(0.25);
       case CellType.goal:
@@ -182,17 +181,28 @@ class _LevelScreenState extends State<LevelScreen> {
 
   Widget _buildControls() {
     return Padding(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       child: Column(
         children: [
           if (controller.isWon)
             Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: Text('🎉 كسبت! وصلت للهدف',
-                  style: TextStyle(
-                      color: accentTeal,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold)),
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                children: [
+                  Text('🎉 كسبت!',
+                      style: TextStyle(
+                          color: accentTeal,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: accentTeal),
+                    child: const Text('رجوع لقائمة المستويات'),
+                  ),
+                ],
+              ),
             ),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -200,38 +210,38 @@ class _LevelScreenState extends State<LevelScreen> {
               _dirButton(Icons.arrow_upward, () => controller.movePlayer(0, -1)),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               _dirButton(Icons.arrow_back, () => controller.movePlayer(-1, 0)),
-              const SizedBox(width: 40),
+              const SizedBox(width: 36),
               _dirButton(Icons.arrow_forward, () => controller.movePlayer(1, 0)),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               _dirButton(Icons.arrow_downward, () => controller.movePlayer(0, 1)),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               ElevatedButton.icon(
                 onPressed: controller.dropEcho,
-                icon: const Icon(Icons.replay_circle_filled),
-                label: const Text('اسقط صدى وارجع البداية'),
+                icon: const Icon(Icons.replay_circle_filled, size: 18),
+                label: const Text('اسقط صدى'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: accentAmber,
                   foregroundColor: bgPurple,
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               IconButton(
                 onPressed: () => setState(controller.resetLevel),
                 icon: const Icon(Icons.restart_alt, color: Colors.white70),
@@ -251,8 +261,8 @@ class _LevelScreenState extends State<LevelScreen> {
         customBorder: const CircleBorder(),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Icon(icon, color: Colors.white, size: 24),
+          padding: const EdgeInsets.all(12),
+          child: Icon(icon, color: Colors.white, size: 22),
         ),
       ),
     );
